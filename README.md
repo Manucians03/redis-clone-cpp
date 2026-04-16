@@ -2,7 +2,7 @@
 
 A lightweight Redis server clone implemented in C++ that supports key-value operations and sorted sets.
 
-## Overview 📘
+## Overview
 
 This project is a simplified implementation of Redis, featuring:
 
@@ -12,21 +12,36 @@ This project is a simplified implementation of Redis, featuring:
 - Command processing similar to Redis
 - Non-blocking I/O with event loop architecture
 
-## Building 🛠️
+## Building
 
 ### Prerequisites
 
-- C++17 compatible compiler (g++ recommended)
-- Linux/Unix environment
+- C++17 compatible compiler
+- `make`
+- macOS or Linux
 
 ### Compilation
 
 ```bash
-# Build server and client
 make
 ```
 
-## Running ▶️
+This builds:
+
+- `redis-clone` - the server
+- `client` - the interactive CLI client
+
+### Tests
+
+Run the unit test suite with:
+
+```bash
+make test
+```
+
+The test binary is built as `redis-clone-tests`.
+
+## Running
 
 ### Server
 
@@ -36,13 +51,27 @@ make
 
 The server listens on 0.0.0.0:8080 by default.
 
+You can also pass a custom host and port:
+
+```bash
+./redis-clone 127.0.0.1 8080
+```
+
 ### Client
 
 ```bash
 ./client
 ```
 
-## Supported Commands 🧾
+The client connects to `127.0.0.1:8080` by default.
+
+You can also target a custom host and port:
+
+```bash
+./client 127.0.0.1 8080
+```
+
+## Supported Commands
 
 The server supports the following Redis-like commands:
 
@@ -60,7 +89,7 @@ The server supports the following Redis-like commands:
 - `ZADD key score member` - Add member to a sorted set
 - `ZREM key member` - Remove member from a sorted set
 - `ZSCORE key member` - Get the score of a member in a sorted set
-- `ZQUERY key min max` - Query members within a score range
+- `ZQUERY key score name offset limit` - Query sorted-set entries starting from a lower bound
 
 ### Usage Examples
 
@@ -68,18 +97,18 @@ The server supports the following Redis-like commands:
 SET mykey hello
 GET mykey
 PTTL mykey
-PEXPIRE mykey 1500
+PEXPIRE mykey 10000
 PTTL mykey
 DEL mykey
 ZADD ranks 10 alice
 ZADD ranks 5 bob
 ZSCORE ranks alice
-ZQUERY ranks 0 10
+ZQUERY ranks 0 "" 0 10
 ```
 
-## Protocol Details 📡
+## Protocol Details
 
-#### Request Format
+### Request Format
 
 ```
 msglen (4 bytes) | nargs (4 bytes) | arglen1 (4 bytes) | arg1 | ... | arglenN (4 bytes) | argN
@@ -92,7 +121,7 @@ Where:
 - arglenX: Length of argument X
 - argX: Byte data for argument X
 
-#### Response Format
+### Response Format
 
 ```
 msglen (4 bytes) | tag (1 byte) | payload
@@ -125,12 +154,12 @@ Hex representation in little-endian:
 05 00 00 00 68 65 6c 6c 6f
 ```
 
-## Architecture 🧱
+## Architecture
 
 ### Core Components
 
 - **Server**: Main server implementation handling connections
-- **EventLoop**: Non-blocking I/O event loop using epoll()
+- **EventLoop**: Non-blocking I/O event loop using `poll()`
 - **ConnectionManager**: Manages client connections
 - **RequestProcessor**: Processes incoming client requests
 - **ProtocolHelper**: Handles the binary protocol encoding/decoding
@@ -144,51 +173,29 @@ Hex representation in little-endian:
 
 ### Core Components
 
-1. **Server**:
-  - Central component that initializes and coordinates all other subsystems
-    - Manages the lifecycle of the application
-    - Handles signal processing and graceful shutdown
-2. **Event Loop**:
-  - Non-blocking I/O multiplexer using `epoll()`
-    - Efficiently handles multiple client connections concurrently
-    - Event-based architecture that processes read/write events as they occur
-    - Avoids thread-per-connection overhead while maintaining responsiveness
-3. **Connection Management**:
-  - Manages client connection lifecycles
-    - Handles socket I/O operations through the `Connection` class
-    - Tracks connection state (read/write/closed)
-    - Implements connection timeouts to prevent resource leaks
-    - Uses `ByteBuffer` for efficient input/output buffering
-4. **Protocol Layer**:
-  - Binary protocol implementation for efficient communication
-    - `ProtocolHelper` encapsulates serialization/deserialization logic
-    - Support for different data types (strings, integers, doubles, arrays)
-    - Request parsing and response formatting
-    - Error handling and protocol validation
-5. **Command Processing Pipeline**:
-  - `RequestProcessor` receives and routes client requests
-    - Command pattern implementation for extensibility
-    - `CommandFactory` creates appropriate command handlers
-    - Each command implemented as a separate class with consistent interface
-    - Error handling and response generation
-6. **Storage Engine**:
-  - In-memory data structures optimized for different access patterns
-    - `ResizableHashTable` as the main key-value store with dynamic resizing
-    - `AVLTree` for sorted set implementation with O(log n) operations
-    - Value types system for different data representations
-    - Expiration mechanism for key TTL implementation
+1. **Server**
+   Initializes the subsystems, owns the main loop, and handles graceful shutdown.
+2. **Event Loop**
+   Uses `poll()` to multiplex listener and connection sockets without a thread per connection.
+3. **Connection Management**
+   Tracks connection state, buffers I/O, and handles cleanup for closed or timed-out clients.
+4. **Protocol Layer**
+   Encodes and decodes the custom binary request and response format.
+5. **Command Processing**
+   Routes parsed requests through `CommandFactory` to individual command implementations.
+6. **Storage Engine**
+   Uses `ResizableHashTable` for key-value storage, `AVLTree` for sorted sets, and a TTL heap for expirations.
 
 ### Data Flow
 
-1. Client connection is accepted by the Server
-2. EventLoop monitors socket for read/write readiness
-3. When data is available, Connection.handleRead() buffers the incoming data
-4. RequestProcessor attempts to parse a complete request using ProtocolHelper
-5. If a complete request is available, CommandFactory creates the appropriate command
-6. Command is executed against the database, producing a Response
-7. Response is serialized by ProtocolHelper and written to the connection's output buffer
-8. EventLoop detects write readiness and Connection.handleWrite() sends the response
-9. After sending, connection returns to read mode waiting for the next request
+1. The server accepts a client connection.
+2. `EventLoop` monitors sockets for read and write readiness.
+3. `Connection::handleRead()` appends incoming bytes to the input buffer.
+4. `RequestProcessor` asks `ProtocolHelper` to parse complete requests.
+5. `CommandFactory` creates the matching command handler.
+6. The command executes against the database and returns a `Response`.
+7. `ProtocolHelper` serializes the response into the output buffer.
+8. `Connection::handleWrite()` flushes buffered bytes back to the client.
 
 ### Design Patterns
 
@@ -197,7 +204,15 @@ Hex representation in little-endian:
 - **Repository Pattern**: IDatabase interface abstracts storage operations
 - **Strategy Pattern**: Different command implementations for various operations
 
-## Attribution 📖
+## Platform Notes
+
+- The networking layer now uses `poll()`, which makes the project build on both macOS and Linux without `epoll`.
+- `SIGPIPE` is ignored for socket writes so disconnects do not terminate the process on macOS.
+- TTL commands use millisecond precision:
+  - `PEXPIRE key milliseconds`
+  - `PTTL key`
+
+## Attribution
 
 This implementation is based on (and adapted from) the concepts and structure presented in the book:
 Build Your Own Redis with C/C++  
@@ -207,6 +222,6 @@ Author: James Smith
 
 The code here is an independent reimplementation inspired by that guide.
 
-## License 📄
+## License
 
 This project is open source and available under the MIT License. See LICENSE file.
